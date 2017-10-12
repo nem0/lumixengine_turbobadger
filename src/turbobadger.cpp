@@ -163,14 +163,12 @@ struct TurboBadgerImpl : public TurboBadger
 	{
 		tb_core_init(&m_renderer);
 
-//		engine.getInputSystem().eventListener().bind<TurboBadgerImpl, &TurboBadgerImpl::onInputEvent>(this);
 		registerLuaAPI();
 	}
 
 
 	~TurboBadgerImpl()
 	{
-//		m_engine.getInputSystem().eventListener().unbind<TurboBadgerImpl, &TurboBadgerImpl::onInputEvent>(this);
 		tb_core_shutdown();
 	}
 
