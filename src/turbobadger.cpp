@@ -50,6 +50,18 @@ namespace Lumix
 static const ResourceType MATERIAL_TYPE("material");
 
 
+struct TurboBadgerImpl;
+
+
+struct RootWidget : public TBWidget
+{
+	RootWidget(TurboBadgerImpl& system) : gui_system(system) {}
+
+	bool OnEvent(const TBWidgetEvent& ev) override;
+
+	TurboBadgerImpl& gui_system;
+};
+
 
 struct BGFXBitmap : public TBBitmap
 {
@@ -155,11 +167,59 @@ struct GUIRenderer : public TBRendererBatcher
 };
 
 
+struct LuaEvent
+{
+	bool invoke()
+	{
+		if (lua_rawgeti(state, LUA_REGISTRYINDEX, function_ref) != LUA_TFUNCTION)
+		{
+			ASSERT(false);
+		}
+
+		if (lua_pcall(state, 0, 0, 0) != LUA_OK)
+		{
+			g_log_error.log("Gui") << lua_tostring(state, -1);
+			lua_pop(state, 1);
+		}
+		return true;
+	}
+
+	lua_State* state;
+	int function_ref;
+};
+
+
 struct TurboBadgerImpl : public TurboBadger
 {
+	static int registerEvent(lua_State* L)
+	{
+		auto* gui = LuaWrapper::checkArg<TurboBadgerImpl*>(L, 1);
+		EVENT_TYPE event_type = (EVENT_TYPE)LuaWrapper::checkArg<int>(L, 2);
+		TBID widget_id = LuaWrapper::checkArg<const char*>(L, 3);
+		LuaEvent event;
+		event.state = L;
+		lua_pushvalue(L, 4);
+		event.function_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+		lua_pop(L, 1);
+		u64 event_id = (u64)event_type << 32 | (uint32)widget_id;
+		gui->m_lua_events.insert(event_id, event);
+		return 0;
+	}
+
+
+	void unregisterEvent(int event_type, const char* widget_id)
+	{
+		TBID tb_widget_id(widget_id);
+		u64 event_id = (u64)event_type << 32 | (uint32)tb_widget_id;
+		m_lua_events.erase(event_id);
+	}
+
+
 	TurboBadgerImpl(Engine& engine)
 		: m_engine(engine)
 		, m_renderer(engine)
+		, m_root_widget(*this)
+		, m_lua_events(engine.getAllocator())
 	{
 		tb_core_init(&m_renderer);
 
@@ -206,8 +266,13 @@ struct TurboBadgerImpl : public TurboBadger
 		REGISTER_FUNCTION(showGUI);
 		REGISTER_FUNCTION(isGUIShown);
 		REGISTER_FUNCTION(loadFile);
+		REGISTER_FUNCTION(unregisterEvent);
+
+		LuaWrapper::createSystemFunction(L, "TurboBadger", "registerEvent", &TurboBadgerImpl::registerEvent);
 
 		LuaWrapper::createSystemVariable(L, "TurboBadger", "instance", this);
+		LuaWrapper::createSystemVariable(L, "TurboBadger", "EVENT_TYPE_CLICK", EVENT_TYPE_CLICK);
+		LuaWrapper::createSystemVariable(L, "TurboBadger", "EVENT_TYPE_CHANGED", EVENT_TYPE_CHANGED);
 
 		#undef REGISTER_FUNCTION
 	}
@@ -231,31 +296,7 @@ struct TurboBadgerImpl : public TurboBadger
 		m_renderer.EndPaint();
 	}
 
-	/*
-	void onInputEvent(InputSystem::InputEvent& event)
-	{
-		Vec2 mouse_pos = m_engine.getInputSystem().getMousePos() - m_interface->getPos();
-		switch (event.type)
-		{
-			case InputSystem::InputEvent::POINTER_DOWN:
-				m_root_widget.InvokePointerDown((int)mouse_pos.x, (int)mouse_pos.y, 1, TB_MODIFIER_NONE, false);
-				break;
-			case InputSystem::InputEvent::POINTER_UP:
-				m_root_widget.InvokePointerUp((int)mouse_pos.x, (int)mouse_pos.y, TB_MODIFIER_NONE, false);
-				break;
-			case InputSystem::InputEvent::POINTER_MOVE:
-				m_root_widget.InvokePointerMove((int)mouse_pos.x, (int)mouse_pos.y, TB_MODIFIER_NONE, false);
-				break;
-			case InputSystem::InputEvent::KEY_DOWN:
-				m_root_widget.InvokeKey(event.key.sym, TB_KEY_UNDEFINED, TB_MODIFIER_NONE, true);
-				break;
-			case InputSystem::InputEvent::KEY_UP:
-				m_root_widget.InvokeKey(event.key.sym, TB_KEY_UNDEFINED, TB_MODIFIER_NONE, false);
-				break;
-		}
-	}*/
-
-
+	
 	void update(float) override
 	{
 		if (!m_renderer.m_pipeline)
@@ -303,16 +344,25 @@ struct TurboBadgerImpl : public TurboBadger
 					}
 					break;
 				case InputSystem::Event::BUTTON:
-					if (events[i].device->type == InputSystem::Device::MOUSE)
+					switch (events[i].device->type)
 					{
-						float x = events[i].data.button.x_abs;
-						float y = events[i].data.button.y_abs;
-						if(events[i].data.button.state == InputSystem::ButtonEvent::DOWN)
-							m_root_widget.InvokePointerDown((int)x, (int)y, 1, TB_MODIFIER_NONE, false);
-						else
-							m_root_widget.InvokePointerUp((int)x, (int)y, TB_MODIFIER_NONE, false);
+						case InputSystem::Device::MOUSE:
+							{
+								float x = events[i].data.button.x_abs;
+								float y = events[i].data.button.y_abs;
+								if (events[i].data.button.state == InputSystem::ButtonEvent::DOWN)
+									m_root_widget.InvokePointerDown((int)x, (int)y, 1, TB_MODIFIER_NONE, false);
+								else
+									m_root_widget.InvokePointerUp((int)x, (int)y, TB_MODIFIER_NONE, false);
+							}
+							break;
+						case InputSystem::Device::KEYBOARD:
+							{
+								bool is_down = events[i].data.button.state == InputSystem::ButtonEvent::DOWN;
+								m_root_widget.InvokeKey(events[i].data.button.key_id, TB_KEY_UNDEFINED, TB_MODIFIER_NONE, is_down);
+							}
+							break;
 					}
-					break;
 			}
 		}
 
@@ -327,9 +377,23 @@ struct TurboBadgerImpl : public TurboBadger
 
 
 	Engine& m_engine;
-	TBWidget m_root_widget;
+	RootWidget m_root_widget;
 	GUIRenderer m_renderer;
+	HashMap<u64, LuaEvent> m_lua_events;
 };
+
+
+
+bool RootWidget::OnEvent(const TBWidgetEvent& ev)
+{
+	u64 event_id = (u64)ev.type << 32 | (uint32)ev.target->GetID();
+	auto iter = gui_system.m_lua_events.find(event_id);
+	if (!iter.isValid()) return false;
+
+	return iter.value().invoke();
+	return false;
+}
+
 
 
 LUMIX_PLUGIN_ENTRY(lumixengine_turbobadger)
