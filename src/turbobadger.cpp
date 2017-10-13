@@ -101,7 +101,7 @@ struct GUIRenderer : public TBRendererBatcher
 	{
 		m_material->getResourceManager().unload(*m_material);
 
-		if (m_pipeline)	m_pipeline->destroyUniform(m_texture_uniform);
+		bgfx::destroy(m_texture_uniform);
 	}
 
 
@@ -245,9 +245,9 @@ struct TurboBadgerImpl : public TurboBadger
 	}
 
 
-	void loadFile(const char* path)
+	void loadFile(const char* path, bool additive)
 	{
-		m_root_widget.DeleteAllChildren();
+		if (!additive) m_root_widget.DeleteAllChildren();
 		g_widgets_reader->LoadFile(&m_root_widget, path);
 	}
 
@@ -307,7 +307,7 @@ struct TurboBadgerImpl : public TurboBadger
 			{
 				m_renderer.m_pipeline = pipeline;
 				pipeline->addCustomCommandHandler("renderTurbobadger").callback.bind<TurboBadgerImpl, &TurboBadgerImpl::pipelineCallback>(this);
-				m_renderer.m_texture_uniform = m_renderer.m_pipeline->createTextureUniform("u_texture");
+				m_renderer.m_texture_uniform = bgfx::createUniform("u_texture", bgfx::UniformType::Int1);
 
 				void register_stb_font_renderer();
 				register_stb_font_renderer();
