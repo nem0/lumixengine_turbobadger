@@ -6,4 +6,5 @@
 [![Twitter](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/mikulasflorek)
 
 **Work in progress.**
+
 [Getting started (Video)](https://www.youtube.com/watch?v=HLwTLLYEIew)
