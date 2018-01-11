@@ -5,6 +5,6 @@
 [![License](http://img.shields.io/:license-mit-blue.svg)](http://doge.mit-license.org)
 [![Twitter](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/mikulasflorek)
 
-**Work in progress.**
+**Using gui system built in Lumix is recommended. This plugin is not supported.**
 
 [Getting started (Video)](https://www.youtube.com/watch?v=HLwTLLYEIew)
